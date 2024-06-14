@@ -13,7 +13,7 @@ from app.schemas.SchemaMovimiento import MovimientoCreateModel
 
 router = APIRouter()
 
-def dias_del_mes(mes, anio):
+def mes_del_anio(mes, anio):
     return [datetime(anio, mes, dia) for dia in range(1, 32) if datetime(anio, mes, dia).month == mes]
 
 def clean_dataframe(df):
@@ -58,7 +58,7 @@ def obtener_mes_y_anio(fecha_str):
     fecha = datetime.strptime(fecha_str, '%Y-%m-%d')
     return fecha.month, fecha.year
 
-@router.post("/PostCargarPlanMinero/")
+@router.post("/PostCargarBudget/")
 async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
     if not file.filename.endswith('.xlsx'):
         raise HTTPException(status_code=400, detail="El archivo no es un archivo .xlsx válido.")
@@ -66,7 +66,7 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
     try:
         contents = await file.read()
         data = io.BytesIO(contents)
-        df = pd.read_excel(data, sheet_name='DETALLE FINAL DIARIO', engine='openpyxl')
+        df = pd.read_excel(data, sheet_name='DETALLE FINAL', engine='openpyxl')
         df = clean_dataframe(df)
 
         mes, anio = obtener_mes_y_anio(fecha)
@@ -102,9 +102,9 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
                         id_concepto = id_conceptos[concepto_excel]
                         row_data = row[2:33]
                         numeric_data = pd.to_numeric(row_data, errors='coerce')
-                        for dia, value in zip(dias_del_mes(mes, anio), numeric_data):
+                        for mes, value in zip(mes_del_anio(mes, anio), numeric_data):
                             if pd.notna(value):
-                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, dia))
+                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, mes))
 
             for future in as_completed(tasks):
                 future.result()  # Esto asegura que cualquier excepción en las tareas se levante
