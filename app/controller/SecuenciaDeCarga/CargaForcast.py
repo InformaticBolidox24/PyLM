@@ -129,7 +129,7 @@ async def cargar_forcast(fecha: str, file: UploadFile = File(...)):
                         id_concepto = id_conceptos[concepto_excel]
                         row_data = row[2:14]
                         numeric_data = pd.to_numeric(row_data, errors='coerce')
-                        for dia, value in zip(dias_del_mes(mes, anio), numeric_data):
+                        for dia, value in zip(ultimo_dia_del_mes(mes, anio), numeric_data):
                             if pd.notna(value):
                                 tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, dia))
 
