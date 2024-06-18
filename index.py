@@ -19,7 +19,8 @@ from router import (
     RouterDiasRiego,
     RouterLoma,
     RouterTipoRiego,
-    RouterCargaBudget
+    RouterCargaBudget,
+    RouterCargaLOM
 )
 
 app = FastAPI()
@@ -136,3 +137,7 @@ app.include_router(RouterInfoRiego.DeleteInfoRiego.router)
 #Routers para Carga del Budget
 
 app.include_router(RouterCargaBudget.CargaBudget.router)
+
+#Routers para Carga del LOM
+
+app.include_router(RouterCargaLOM.CargaLOM.router)
