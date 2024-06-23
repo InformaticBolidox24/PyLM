@@ -66,8 +66,47 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
     try:
         contents = await file.read()
         data = io.BytesIO(contents)
-        df = pd.read_excel(data, sheet_name='DETALLE FINAL', engine='openpyxl')
-        df = clean_dataframe(df)
+        dfROM1 = pd.read_excel(data, sheet_name='DETALLE LBI', engine='openpyxl')
+        dfROM1 = clean_dataframe(dfROM1)
+        
+        # Filtrar los datos específicos de "ROM1 a Pila (Procesable)"
+        rom_pila_procesableROM1 = dfROM1[dfROM1.iloc[:, 0] == 'ROM a Pila (Procesable)']
+        rom_pila_procesableROM1 = rom_pila_procesableROM1.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
+
+        # Seleccionar solo las filas necesarias
+        tonelajeROM1 = rom_pila_procesableROM1.iloc[0, 1:6].tolist()
+        cu_tROM1 = rom_pila_procesableROM1.iloc[1, 1:6].tolist()
+        cu_sROM1 = rom_pila_procesableROM1.iloc[2, 1:6].tolist()
+        rcu_dROM1 = rom_pila_procesableROM1.iloc[3, 1:6].tolist()
+        finoROM1 = rom_pila_procesableROM1.iloc[4, 1:6].tolist()
+
+        dfROM2 = pd.read_excel(data, sheet_name='DETALLE LBII', engine='openpyxl')
+        dfROM2 = clean_dataframe(dfROM2)
+
+         # Filtrar los datos específicos de "ROM1 a Pila (Procesable)"
+        rom_pila_procesableROM2 = dfROM2[dfROM2.iloc[:, 0] == 'ROM a Pila (Procesable)']
+        rom_pila_procesableROM2 = rom_pila_procesableROM2.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
+        
+        # Seleccionar solo las filas necesarias
+        tonelajeROM2 = rom_pila_procesableROM2.iloc[0, 1:6].tolist()
+        cu_tROM2 = rom_pila_procesableROM2.iloc[1, 1:6].tolist()
+        cu_sROM2 = rom_pila_procesableROM2.iloc[2, 1:6].tolist()
+        rcu_dROM2 = rom_pila_procesableROM2.iloc[3, 1:6].tolist()
+        finoROM2 = rom_pila_procesableROM2.iloc[4, 1:6].tolist()
+
+        dfHEAP = pd.read_excel(data, sheet_name='DETALLE FINAL', engine='openpyxl')
+        dfHEAP = clean_dataframe(dfHEAP)
+
+        # Filtrar los datos específicos de HEAP"
+        Total_HEAP = dfHEAP[dfHEAP.iloc[:, 0] == 'HEAP']
+        Total_HEAP = Total_HEAP.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
+
+        # Seleccionar solo las filas necesarias
+        tonelajeHEAP = Total_HEAP.iloc[0, 1:6].tolist()
+        cu_tHEAP = Total_HEAP.iloc[1, 1:6].tolist()
+        cu_sHEAP = Total_HEAP.iloc[2, 1:6].tolist()
+        rcu_dHEAP = Total_HEAP.iloc[3, 1:6].tolist()
+        finoHEAP = Total_HEAP.iloc[4, 1:6].tolist()
 
         mes, anio = obtener_mes_y_anio(fecha)
 
