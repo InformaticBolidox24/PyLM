@@ -1,63 +1,93 @@
-import pandas as pd
 import io
 from datetime import datetime, timedelta
-from fastapi import APIRouter, UploadFile, HTTPException, File
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import pandas as pd
+from fastapi import APIRouter, UploadFile, HTTPException, File
+
+# Importaciones locales
 from app.controller.Concepto import PostConcepto, GetLastID as idConcepto, GetConcepto as GetAllConceptos
 from app.controller.Secuencia import PostSecuencia, GetLastID as idSecuencia, GetSecuencia as GetAllSecuencias
 from app.controller.Movimiento import PostMovimiento
+#schemas
 from app.schemas.SchemaConcepto import ConceptoCreateModel
 from app.schemas.SchemaSecuencia import SecuenciaCreateModel
 from app.schemas.SchemaMovimiento import MovimientoCreateModel
 
+# Inicializar el router de FastAPI
 router = APIRouter()
 
+def obtener_mes_y_anio(fecha_str):
+    """Extrae el mes y el año de una cadena de fecha."""
+    fecha = datetime.strptime(fecha_str, "%Y-%m-%d")
+    return fecha.month, fecha.year
+
 def dias_del_mes(mes, anio):
-    return [datetime(anio, mes, dia) for dia in range(1, 32)]
+    """Genera una lista de todas las fechas en un mes y año dados."""
+    dias = [datetime(anio, mes, day) for day in range(1, 32) if datetime(anio, mes, day).month == mes]
+    return dias
 
 def clean_dataframe(df):
-    df[df.columns[0]] = df[df.columns[0]].fillna(method='ffill')
+    # Rellenar los valores faltantes en todas las columnas excepto la primera fila (que es el nombre de la hoja)
+    for col in df.columns:
+        df[col] = df[col].fillna(method='ffill')
     df = df.dropna(axis=1, how='all')
     df = df.loc[:, ~(df.columns.str.contains('Unnamed') & df.isna().all())]
     return df
 
+
 def extract_column_data(df, column_name):
+    """Extrae datos únicos de una columna específica en el dataframe."""
     return df[column_name].dropna().unique().tolist()
 
 def process_secuencia_item(item):
-    secuencia_data = SecuenciaCreateModel(descripcion=str(item))
-    try:
-        PostSecuencia.crear_secuencia(secuencia_data)
-        return idSecuencia.LastID()
-    except HTTPException as e:
-        print("Error en process_secuencia_item:", e)
-    return None
+    """Procesa un ítem de secuencia creando una nueva entrada en la base de datos."""
+    if item != 'PLAN MENSUAL' and item != 'Lomas I + Lomas II':
+        secuencia_data = SecuenciaCreateModel(descripcion=str(item))
+        try:
+            PostSecuencia.crear_secuencia(secuencia_data)
+            id_secuencia = idSecuencia.LastID()
+            return id_secuencia
+        except HTTPException as e:
+            print("Error en process_secuencia_item:", e)
+            return None
 
 def process_concepto_item(item):
+
+    """Procesa un ítem de concepto creando una nueva entrada en la base de datos."""
     if item != 'FECHA':
         concepto_data = ConceptoCreateModel(nombre=item)
         try:
             PostConcepto.crear_concepto(concepto_data)
-            return item, idConcepto.LastID()
+            id_concepto = idConcepto.LastID()
+            return item, id_concepto
         except HTTPException as e:
             print("Error en process_concepto_item:", e)
+            return item, None
     return item, None
 
 def process_movimiento_item(id_concepto, id_secuencia, value, date):
-    movimiento_data = MovimientoCreateModel(id_concepto=id_concepto, id_secuencia=id_secuencia, valor=value, fecha=date)
+    """Procesa un ítem de movimiento creando una nueva entrada en la base de datos."""
+    movimiento_data = MovimientoCreateModel(
+        id_concepto=id_concepto,
+        id_secuencia=id_secuencia,
+        valor=value,
+        fecha=date
+    )
+
+    print("resultado array", movimiento_data)
+
     try:
-        PostMovimiento.crear_movimiento(movimiento_data)
+        request = PostMovimiento.crear_movimiento(movimiento_data)
+        print("Resultado de inserción:", request)
         return "datos insertados con exito"
     except HTTPException as e:
         print("Error en process_movimiento_item:", e)
 
-def obtener_mes_y_anio(fecha_str):
-    fecha = datetime.strptime(fecha_str, '%Y-%m-%d')
-    return fecha.month, fecha.year
-
+# Endpoint de FastAPI
 @router.post("/PostCargarPlanMinero/")
 async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
+    """Carga datos desde un archivo Excel y los procesa."""
     if not file.filename.endswith('.xlsx'):
         raise HTTPException(status_code=400, detail="El archivo no es un archivo .xlsx válido.")
 
@@ -69,43 +99,48 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
 
         mes, anio = obtener_mes_y_anio(fecha)
 
+        # captura los datos para insertarlos en la bd
         secuencia = extract_column_data(df, df.columns[0])
         conceptos = extract_column_data(df, df.columns[1])
 
-        id_secuencias = {}
-        id_conceptos = {}
+        # los extrae de la bd
+        secuenciaDB = GetAllSecuencias.listar_secuencia()
+        conceptosDB = GetAllConceptos.listar_conceptos()
 
+        # Procesar secuencias en paralelo
         with ThreadPoolExecutor() as executor:
-            secuencias_futures = {executor.submit(process_secuencia_item, item): item for item in secuencia}
-            conceptos_futures = {executor.submit(process_concepto_item, item): item for item in conceptos}
+            future_to_item = {executor.submit(process_secuencia_item, item): item for item in secuencia}
+            for future in as_completed(future_to_item):
+                future.result()
 
-            for future in as_completed(secuencias_futures):
-                item = secuencias_futures[future]
-                id_secuencias[item] = future.result()
-
-            for future in as_completed(conceptos_futures):
-                item = conceptos_futures[future]
-                result = future.result()
-                if result[1] is not None:
-                    id_conceptos[item] = result[1]
-
+        # Procesar conceptos en paralelo
         with ThreadPoolExecutor() as executor:
-            tasks = []
+            future_to_concepto = {executor.submit(process_concepto_item, item): item for item in conceptos}
+            for future in as_completed(future_to_concepto):
+                future.result()
+
+        # Procesar movimientos en paralelo
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            #recorre el dataframe
             for idx, row in df.iterrows():
-                secuencia_excel = row.iloc[0]
-                if secuencia_excel in id_secuencias:
-                    id_secuencia = id_secuencias[secuencia_excel]
-                    concepto_excel = row.iloc[1]
-                    if concepto_excel in id_conceptos:
-                        id_concepto = id_conceptos[concepto_excel]
-                        row_data = row[2:33]
-                        numeric_data = pd.to_numeric(row_data, errors='coerce')
-                        for dia, value in zip(dias_del_mes(mes, anio), numeric_data):
-                            if pd.notna(value):
-                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, dia))
 
-            for future in as_completed(tasks):
-                future.result()  # This ensures any exception in the tasks is raised
+                # recorre las secuencia de la bd y las comprara con las del dataframe
+                for secuencia in secuenciaDB:
+                    if secuencia.descripcion == row[0]:
+                        id_secuencia = secuencia.id
+
+                        # recorre los concceptos de la bd y los comprara con los del dataframe
+                        for conceptos in conceptosDB:
+                            if conceptos.nombre == row[1]:
+                                id_concepto = conceptos.id
+
+                                row_data = row[2:33]  # Ajuste para tomar sólo los días del 1 al 31
+                                numeric_data = pd.to_numeric(row_data, errors='coerce')
+                                for dia, value in zip(dias_del_mes(mes, anio), numeric_data):
+                                    if pd.notna(value):
+
+                                        #guarda los datos comparados en la bd
+                                        executor.submit(process_movimiento_item, id_concepto, id_secuencia, round(value, 4), dia)
 
     except Exception as e:
         print("Excepción:", str(e))
