@@ -24,6 +24,7 @@ def clean_dataframe(df):
     df = df.loc[:, ~(df.columns.str.contains('Unnamed') & df.isna().all())]
     return df
 
+
 def extract_column_data(df, column_name):
     return df[column_name].dropna().unique().tolist()
 
