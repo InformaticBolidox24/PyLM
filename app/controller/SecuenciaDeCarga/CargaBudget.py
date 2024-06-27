@@ -79,6 +79,7 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
         cu_sROM1 = rom_pila_procesableROM1.iloc[2, 1:36].tolist()
         rcu_dROM1 = rom_pila_procesableROM1.iloc[3, 1:36].tolist()
         finoROM1 = rom_pila_procesableROM1.iloc[4, 1:36].tolist()
+        
         print(tonelajeROM1)
         print(cu_tROM1)
         print(cu_sROM1)
@@ -99,6 +100,7 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
         cu_wROM2 = rom_pila_procesableROM2.iloc[3, 1:36].tolist()
         rcu_hROM2 = rom_pila_procesableROM2.iloc[4, 1:36].tolist()
         finoROM2 = rom_pila_procesableROM2.iloc[5, 1:36].tolist()
+        
         print(tonelajeROM2)
         print(cu_tROM2)
         print(cu_sROM2)
