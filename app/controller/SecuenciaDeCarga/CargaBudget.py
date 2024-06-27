@@ -74,11 +74,16 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
         rom_pila_procesableROM1 = rom_pila_procesableROM1.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
 
         # Seleccionar solo las filas necesarias
-        tonelajeROM1 = rom_pila_procesableROM1.iloc[0, 1:6].tolist()
-        cu_tROM1 = rom_pila_procesableROM1.iloc[1, 1:6].tolist()
-        cu_sROM1 = rom_pila_procesableROM1.iloc[2, 1:6].tolist()
-        rcu_dROM1 = rom_pila_procesableROM1.iloc[3, 1:6].tolist()
-        finoROM1 = rom_pila_procesableROM1.iloc[4, 1:6].tolist()
+        tonelajeROM1 = rom_pila_procesableROM1.iloc[0, 1:36].tolist()
+        cu_tROM1 = rom_pila_procesableROM1.iloc[1, 1:36].tolist()
+        cu_sROM1 = rom_pila_procesableROM1.iloc[2, 1:36].tolist()
+        rcu_dROM1 = rom_pila_procesableROM1.iloc[3, 1:36].tolist()
+        finoROM1 = rom_pila_procesableROM1.iloc[4, 1:36].tolist()
+        print(tonelajeROM1)
+        print(cu_tROM1)
+        print(cu_sROM1)
+        print(rcu_dROM1)
+        print(finoROM1)
 
         dfROM2 = pd.read_excel(data, sheet_name='DETALLE LBII', engine='openpyxl')
         dfROM2 = clean_dataframe(dfROM2)
@@ -88,11 +93,19 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
         rom_pila_procesableROM2 = rom_pila_procesableROM2.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
         
         # Seleccionar solo las filas necesarias
-        tonelajeROM2 = rom_pila_procesableROM2.iloc[0, 1:6].tolist()
-        cu_tROM2 = rom_pila_procesableROM2.iloc[1, 1:6].tolist()
-        cu_sROM2 = rom_pila_procesableROM2.iloc[2, 1:6].tolist()
-        rcu_dROM2 = rom_pila_procesableROM2.iloc[3, 1:6].tolist()
-        finoROM2 = rom_pila_procesableROM2.iloc[4, 1:6].tolist()
+        tonelajeROM2 = rom_pila_procesableROM2.iloc[0, 1:36].tolist()
+        cu_tROM2 = rom_pila_procesableROM2.iloc[1, 1:36].tolist()
+        cu_sROM2 = rom_pila_procesableROM2.iloc[2, 1:36].tolist()
+        cu_wROM2 = rom_pila_procesableROM2.iloc[3, 1:36].tolist()
+        rcu_hROM2 = rom_pila_procesableROM2.iloc[4, 1:36].tolist()
+        finoROM2 = rom_pila_procesableROM2.iloc[5, 1:36].tolist()
+        print(tonelajeROM2)
+        print(cu_tROM2)
+        print(cu_sROM2)
+        print(cu_wROM2)
+        print(rcu_hROM2)
+        print(finoROM2)
+
 
         dfHEAP = pd.read_excel(data, sheet_name='DETALLE FINAL', engine='openpyxl')
         dfHEAP = clean_dataframe(dfHEAP)
@@ -102,37 +115,81 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
         Total_HEAP = Total_HEAP.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
 
         # Seleccionar solo las filas necesarias
-        tonelajeHEAP = Total_HEAP.iloc[0, 1:6].tolist()
-        cu_tHEAP = Total_HEAP.iloc[1, 1:6].tolist()
-        cu_sHEAP = Total_HEAP.iloc[2, 1:6].tolist()
-        rcu_dHEAP = Total_HEAP.iloc[3, 1:6].tolist()
-        finoHEAP = Total_HEAP.iloc[4, 1:6].tolist()
+        tonelajeHEAP = Total_HEAP.iloc[0, 1:36].tolist()
+        cu_tHEAP = Total_HEAP.iloc[1, 1:36].tolist()
+        cu_sHEAP = Total_HEAP.iloc[2, 1:36].tolist()
+        cu_hHEAP = Total_HEAP.iloc[3, 1:36].tolist()
+        wcu_HEAP = Total_HEAP.iloc[4, 1:36].tolist()
+        finoHEAP = Total_HEAP.iloc[5, 1:36].tolist()
+
+        print(tonelajeHEAP)
+        print(cu_tHEAP)
+        print(cu_sHEAP)
+        print(cu_hHEAP)
+        print(wcu_HEAP)
+        print(finoHEAP)
+
 
         mes, anio = obtener_mes_y_anio(fecha)
 
-        secuencia = extract_column_data(df, df.columns[0])
-        conceptos = extract_column_data(df, df.columns[1])
+        secuenciaROM1 = extract_column_data(dfROM1, dfROM1.columns[0])
+        conceptosROM1 = extract_column_data(dfROM1, dfROM1.columns[1])
+
+        secuenciaROM2 = extract_column_data(dfROM2, dfROM2.columns[0])
+        conceptosROM2 = extract_column_data(dfROM2, dfROM2.columns[1])
+
+        secuenciaHEAP = extract_column_data(dfHEAP, dfHEAP.columns[0])
+        conceptosHEAP = extract_column_data(dfHEAP, dfHEAP.columns[1])
 
         id_secuencias = {}
         id_conceptos = {}
 
+        
         with ThreadPoolExecutor() as executor:
-            secuencias_futures = {executor.submit(process_secuencia_item, item): item for item in secuencia}
-            conceptos_futures = {executor.submit(process_concepto_item, item): item for item in conceptos}
+            secuencias_futures_ROM1 = {executor.submit(process_secuencia_item, item): item for item in secuenciaROM1}
+            conceptos_futures_ROM1 = {executor.submit(process_concepto_item, item): item for item in conceptosROM1}
 
-            for future in as_completed(secuencias_futures):
-                item = secuencias_futures[future]
+            for future in as_completed(secuencias_futures_ROM1):
+                item = secuencias_futures_ROM1[future]
                 id_secuencias[item] = future.result()
 
-            for future in as_completed(conceptos_futures):
-                item = conceptos_futures[future]
+            for future in as_completed(conceptos_futures_ROM1):
+                item = conceptos_futures_ROM1[future]
+                result = future.result()
+                if result[1] is not None:
+                    id_conceptos[item] = result[1]
+
+        with ThreadPoolExecutor() as executor:
+            secuencias_futures_ROM2 = {executor.submit(process_secuencia_item, item): item for item in secuenciaROM2}
+            conceptos_futures_ROM2 = {executor.submit(process_concepto_item, item): item for item in conceptosROM2}
+
+            for future in as_completed(secuencias_futures_ROM2):
+                item = secuencias_futures_ROM2[future]
+                id_secuencias[item] = future.result()
+
+            for future in as_completed(conceptos_futures_ROM2):
+                item = conceptos_futures_ROM2[future]
+                result = future.result()
+                if result[1] is not None:
+                    id_conceptos[item] = result[1]
+
+        with ThreadPoolExecutor() as executor:
+            secuencias_futures_HEAP = {executor.submit(process_secuencia_item, item): item for item in secuenciaHEAP}
+            conceptos_futures_HEAP = {executor.submit(process_concepto_item, item): item for item in conceptosHEAP}
+
+            for future in as_completed(secuencias_futures_HEAP):
+                item = secuencias_futures_HEAP[future]
+                id_secuencias[item] = future.result()
+
+            for future in as_completed(conceptos_futures_HEAP):
+                item = conceptos_futures_HEAP[future]
                 result = future.result()
                 if result[1] is not None:
                     id_conceptos[item] = result[1]
 
         with ThreadPoolExecutor() as executor:
             tasks = []
-            for idx, row in df.iterrows():
+            for idx, row in dfROM1.iterrows():
                 secuencia_excel = row.iloc[0]
                 if secuencia_excel in id_secuencias:
                     id_secuencia = id_secuencias[secuencia_excel]
@@ -148,6 +205,43 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
             for future in as_completed(tasks):
                 future.result()  # Esto asegura que cualquier excepción en las tareas se levante
 
+        with ThreadPoolExecutor() as executor:
+            tasks = []
+            for idx, row in dfROM2.iterrows():
+                secuencia_excel = row.iloc[0]
+                if secuencia_excel in id_secuencias:
+                    id_secuencia = id_secuencias[secuencia_excel]
+                    concepto_excel = row.iloc[1]
+                    if concepto_excel in id_conceptos:
+                        id_concepto = id_conceptos[concepto_excel]
+                        row_data = row[2:33]
+                        numeric_data = pd.to_numeric(row_data, errors='coerce')
+                        for mes, value in zip(mes_del_anio(mes, anio), numeric_data):
+                            if pd.notna(value):
+                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, mes))
+
+            for future in as_completed(tasks):
+                future.result()  # Esto asegura que cualquier excepción en las tareas se levante
+        
+        with ThreadPoolExecutor() as executor:
+            tasks = []
+            for idx, row in dfHEAP.iterrows():
+                secuencia_excel = row.iloc[0]
+                if secuencia_excel in id_secuencias:
+                    id_secuencia = id_secuencias[secuencia_excel]
+                    concepto_excel = row.iloc[1]
+                    if concepto_excel in id_conceptos:
+                        id_concepto = id_conceptos[concepto_excel]
+                        row_data = row[2:33]
+                        numeric_data = pd.to_numeric(row_data, errors='coerce')
+                        for mes, value in zip(mes_del_anio(mes, anio), numeric_data):
+                            if pd.notna(value):
+                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, mes))
+
+            for future in as_completed(tasks):
+                future.result()  # Esto asegura que cualquier excepción en las tareas se levante
+    
     except Exception as e:
         print("Excepción:", str(e))
         raise HTTPException(status_code=500, detail=f"Error al procesar el archivo Excel: {str(e)}")
+    
