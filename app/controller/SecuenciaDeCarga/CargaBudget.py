@@ -31,6 +31,14 @@ def extract_column_data(df, column_name):
 def process_secuencia_item(item):
     secuencia_data = SecuenciaCreateModel(descripcion=str(item))
     try:
+        # Comprobar si la secuencia ya existe
+        existing_secuencias = GetAllSecuencias.listar_secuencia()
+        if any(secuencia.descripcion == secuencia_data.descripcion for secuencia in existing_secuencias):
+            # Si ya existe, obtener el ID de la secuencia existente
+            existing_id = next(secuencia.id for secuencia in existing_secuencias if secuencia.descripcion == secuencia_data.descripcion)
+            return existing_id
+
+        # Si no existe, crear la nueva secuencia
         PostSecuencia.crear_secuencia(secuencia_data)
         return idSecuencia.LastID()
     except HTTPException as e:
@@ -41,6 +49,14 @@ def process_concepto_item(item):
     if item != 'FECHA':
         concepto_data = ConceptoCreateModel(nombre=item)
         try:
+            # Comprobar si el concepto ya existe
+            existing_conceptos = GetAllConceptos.listar_conceptos()
+            if any(concepto.nombre == concepto_data.nombre for concepto in existing_conceptos):
+                # Si ya existe, obtener el ID del concepto existente
+                existing_id = next(concepto.id for concepto in existing_conceptos if concepto.nombre == concepto_data.nombre)
+                return item, existing_id
+
+            # Si no existe, crear el nuevo concepto
             PostConcepto.crear_concepto(concepto_data)
             return item, idConcepto.LastID()
         except HTTPException as e:
