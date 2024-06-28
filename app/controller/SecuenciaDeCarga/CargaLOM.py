@@ -71,6 +71,8 @@ async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
 
         mes, anio = obtener_mes_y_anio(fecha)
 
+        print(mes)
+
         secuencia = extract_column_data(df, df.columns[0])
         conceptos = extract_column_data(df, df.columns[1])
 
