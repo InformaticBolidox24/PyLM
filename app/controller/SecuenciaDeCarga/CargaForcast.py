@@ -1,141 +1,144 @@
 import pandas as pd
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import APIRouter, UploadFile, HTTPException, File
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import calendar
 
+# Importaciones locales
 from app.controller.Concepto import PostConcepto, GetLastID as idConcepto, GetConcepto as GetAllConceptos
 from app.controller.Secuencia import PostSecuencia, GetLastID as idSecuencia, GetSecuencia as GetAllSecuencias
 from app.controller.Movimiento import PostMovimiento
+
+# Schemas
 from app.schemas.SchemaConcepto import ConceptoCreateModel
 from app.schemas.SchemaSecuencia import SecuenciaCreateModel
 from app.schemas.SchemaMovimiento import MovimientoCreateModel
 
 router = APIRouter()
 
-
-def ultimo_dia_del_mes(mes, anio):
-    # Calcular el primer día del mes siguiente
-    if mes == 12:
-        primer_dia_mes_siguiente = datetime(anio + 1, 1, 1)
-    else:
-        primer_dia_mes_siguiente = datetime(anio, mes + 1, 1)
-
-    # El último día del mes actual es el día anterior al primer día del mes siguiente
-    ultimo_dia = primer_dia_mes_siguiente - timedelta(days=1)
-
-    # Formatear la fecha según el formato requerido
-    nombre_mes = ultimo_dia.strftime("%b").lower()
-    nombre_mes_formateado = {
-        'jan': 'ene',
-        'feb': 'feb',
-        'mar': 'mar',
-        'apr': 'abr',
-        'may': 'may',
-        'jun': 'jun',
-        'jul': 'jul',
-        'aug': 'ago',
-        'sep': 'sep',
-        'oct': 'oct',
-        'nov': 'nov',
-        'dec': 'dic'
-    }[nombre_mes]
-
-    fecha_formateada = ultimo_dia.strftime(f"%d-{nombre_mes_formateado}-%Y")
-
-    return fecha_formateada
-
 def clean_dataframe(df):
-    df[df.columns[0]] = df[df.columns[0]].fillna(method='ffill')
-    df = df.dropna(axis=1, how='all')
-    df = df.loc[:, ~(df.columns.str.contains('Unnamed') & df.isna().all())]
+    if df.empty:
+        raise ValueError("El DataFrame está vacío")
+    df[df.columns[0]] = df[df.columns[0]].ffill()  # Rellenar valores nulos en la primera columna
+    df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')  # Eliminar filas y columnas vacías
     return df
 
 def extract_column_data(df, column_name):
-    return df[column_name].dropna().unique().tolist()
+    return df[column_name].unique().tolist()
 
-def process_secuencia_item(item):
-    secuencia_data = SecuenciaCreateModel(descripcion=str(item))
-    try:
-        PostSecuencia.crear_secuencia(secuencia_data)
-        return idSecuencia.LastID()
-    except HTTPException as e:
-        print("Error en process_secuencia_item:", e)
-    return None
+def dias_del_mes(mes, anio):
+    _, num_days = calendar.monthrange(anio, mes)
+    return [datetime(anio, mes, day) for day in range(1, num_days + 1)]
 
-def process_concepto_item(item):
-    if item != 'FECHA':
+def process_excel_data(excel_data):
+    df_lbi = clean_dataframe(excel_data['DETALLE LBI'].iloc[50:55, 1:-1])
+    df_lbi.columns = ['secuencia', 'conceptos', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC']
+    df_lbi['secuencia'] = df_lbi['secuencia'].replace('ROM a Pila (Procesable)', 'ROM1').fillna(method='ffill')
+
+    df_lbii = clean_dataframe(excel_data['DETALLE LBII'].iloc[76:82, 1:-1])
+    df_lbii.columns = ['secuencia', 'conceptos', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC']
+    df_lbii['secuencia'] = df_lbii['secuencia'].replace('ROM a Pila (Procesable)', 'ROM2').fillna(method='ffill')
+
+    df_final = clean_dataframe(excel_data['DETALLE FINAL'].iloc[8:13, 1:-1])
+    df_final.columns = ['secuencia', 'conceptos', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC']
+    df_final['secuencia'] = df_final['secuencia'].replace('HEAP', 'HEAP').fillna(method='ffill')
+
+    combined_df = pd.concat([df_lbi, df_lbii, df_final]).reset_index(drop=True)
+    return combined_df
+
+def process_secuencia_item(item, secuenciaDB):
+        for secuencia in secuenciaDB:
+            if secuencia.descripcion == item:
+                return secuencia.id
+        secuencia_data = SecuenciaCreateModel(descripcion=str(item))
+        try:
+            PostSecuencia.crear_secuencia(secuencia_data)
+            id_secuencia = idSecuencia.LastID()
+            return id_secuencia
+        except HTTPException as e:
+            print("Error en process_secuencia_item:", e)
+            return None
+
+def process_concepto_item(item, conceptosDB):
+        for concepto in conceptosDB:
+            if concepto.nombre == item:
+                return item, concepto.id
         concepto_data = ConceptoCreateModel(nombre=item)
         try:
             PostConcepto.crear_concepto(concepto_data)
-            return item, idConcepto.LastID()
+            id_concepto = idConcepto.LastID()
+            return item, id_concepto
         except HTTPException as e:
             print("Error en process_concepto_item:", e)
-    return item, None
+            return item, None
 
 def process_movimiento_item(id_concepto, id_secuencia, value, date):
-    movimiento_data = MovimientoCreateModel(id_concepto=id_concepto, id_secuencia=id_secuencia, valor=value, fecha=date)
+    movimiento_data = MovimientoCreateModel(
+        id_concepto=id_concepto,
+        id_secuencia=id_secuencia,
+        valor=value,
+        fecha=date
+    )
     try:
-        PostMovimiento.crear_movimiento(movimiento_data)
+        request = PostMovimiento.crear_movimiento(movimiento_data)
+        print("Resultado de inserción:", request)
         return "datos insertados con exito"
     except HTTPException as e:
         print("Error en process_movimiento_item:", e)
 
-def obtener_mes_y_anio(fecha_str):
-    fecha = datetime.strptime(fecha_str, '%Y-%m-%d')
-    return fecha.month, fecha.year
-
 @router.post("/PostCargarForcast/")
-async def cargar_forcast(fecha: str, file: UploadFile = File(...)):
+async def cargar_forcast(anio: int, file: UploadFile = File(...)):
     if not file.filename.endswith('.xlsx'):
         raise HTTPException(status_code=400, detail="El archivo no es un archivo .xlsx válido.")
 
     try:
         contents = await file.read()
         data = io.BytesIO(contents)
-        df = pd.read_excel(data, sheet_name='DETALLE FINAL', engine='openpyxl')
-        df = clean_dataframe(df)
+        excel_data = pd.read_excel(data, sheet_name=None, engine='openpyxl')
 
-        mes, anio = obtener_mes_y_anio(fecha)
+        processed_data = process_excel_data(excel_data)
+        print("DataFrame procesado:")
+        print(processed_data)
 
-        secuencia = extract_column_data(df, df.columns[0])
-        conceptos = extract_column_data(df, df.columns[1])
+        secuencia = extract_column_data(processed_data, 'secuencia')
+        conceptos = extract_column_data(processed_data, 'conceptos')
 
-        id_secuencias = {}
-        id_conceptos = {}
-
-        with ThreadPoolExecutor() as executor:
-            secuencias_futures = {executor.submit(process_secuencia_item, item): item for item in secuencia}
-            conceptos_futures = {executor.submit(process_concepto_item, item): item for item in conceptos}
-
-            for future in as_completed(secuencias_futures):
-                item = secuencias_futures[future]
-                id_secuencias[item] = future.result()
-
-            for future in as_completed(conceptos_futures):
-                item = conceptos_futures[future]
-                result = future.result()
-                if result[1] is not None:
-                    id_conceptos[item] = result[1]
+        secuenciaDB = GetAllSecuencias.listar_secuencia()
+        conceptosDB = GetAllConceptos.listar_conceptos()
 
         with ThreadPoolExecutor() as executor:
-            tasks = []
-            for idx, row in df.iterrows():
-                secuencia_excel = row.iloc[0]
-                if secuencia_excel in id_secuencias:
-                    id_secuencia = id_secuencias[secuencia_excel]
-                    concepto_excel = row.iloc[1]
-                    if concepto_excel in id_conceptos:
-                        id_concepto = id_conceptos[concepto_excel]
-                        row_data = row[2:14]
-                        numeric_data = pd.to_numeric(row_data, errors='coerce')
-                        for dia, value in zip(ultimo_dia_del_mes(mes, anio), numeric_data):
-                            if pd.notna(value):
-                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, dia))
+            future_to_item = {executor.submit(process_secuencia_item, item, secuenciaDB): item for item in secuencia}
+            for future in as_completed(future_to_item):
+                future.result()
 
-            for future in as_completed(tasks):
-                future.result()  # This ensures any exception in the tasks is raised
+        with ThreadPoolExecutor() as executor:
+            future_to_concepto = {executor.submit(process_concepto_item, item, conceptosDB): item for item in conceptos}
+            for future in as_completed(future_to_concepto):
+                future.result()
 
+        meses = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC']
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for idx, row in processed_data.iterrows():
+                for secuencia in secuenciaDB:
+                    if secuencia.descripcion == row['secuencia']:
+                        id_secuencia = secuencia.id
+                        for concepto in conceptosDB:
+                            if concepto.nombre == row['conceptos']:
+                                id_concepto = concepto.id
+                                for i, mes in enumerate(meses):
+                                    value = row[mes]
+                                    if pd.notna(value):
+                                        dia = dias_del_mes(i + 1, anio)
+                                        for date in dia:
+                                            executor.submit(process_movimiento_item, id_concepto, id_secuencia, round(value / len(dia), 4), date)
+
+        return {"status": "success", "year": anio, "data": processed_data.to_dict(orient="records")}
+
+    except ValueError as ve:
+        print("Excepción de valor:", str(ve))
+        raise HTTPException(status_code=400, detail=f"Error en los datos del archivo Excel: {str(ve)}")
     except Exception as e:
         print("Excepción:", str(e))
         raise HTTPException(status_code=500, detail=f"Error al procesar el archivo Excel: {str(e)}")

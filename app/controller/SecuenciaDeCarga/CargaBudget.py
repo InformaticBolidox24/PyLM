@@ -13,8 +13,8 @@ from app.schemas.SchemaMovimiento import MovimientoCreateModel
 
 router = APIRouter()
 
-def mes_del_anio(mes, anio):
-    return [datetime(anio, mes, dia) for dia in range(1, 32) if datetime(anio, mes, dia).month == mes]
+def dias_del_anio(anio):
+    return [datetime(anio, 1, 1) + timedelta(days=i) for i in range(366 if (anio % 4 == 0 and (anio % 100 != 0 or anio % 400 == 0)) else 365)]
 
 def clean_dataframe(df):
     # Rellenar los valores faltantes en todas las columnas excepto la primera fila (que es el nombre de la hoja)
@@ -28,43 +28,34 @@ def clean_dataframe(df):
 def extract_column_data(df, column_name):
     return df[column_name].dropna().unique().tolist()
 
-def process_secuencia_item(item):
-    secuencia_data = SecuenciaCreateModel(descripcion=str(item))
-    try:
-        # Comprobar si la secuencia ya existe
-        existing_secuencias = GetAllSecuencias.listar_secuencia()
-        if any(secuencia.descripcion == secuencia_data.descripcion for secuencia in existing_secuencias):
-            # Si ya existe, obtener el ID de la secuencia existente
-            existing_id = next(secuencia.id for secuencia in existing_secuencias if secuencia.descripcion == secuencia_data.descripcion)
-            return existing_id
+def process_secuencia_item(item, secuenciaDB):
+        for secuencia in secuenciaDB:
+            if secuencia.descripcion == item:
+                return secuencia.id
+        secuencia_data = SecuenciaCreateModel(descripcion=str(item))
+        try:
+            PostSecuencia.crear_secuencia(secuencia_data)
+            id_secuencia = idSecuencia.LastID()
+            return id_secuencia
+        except HTTPException as e:
+            print("Error en process_secuencia_item:", e)
+            return None
 
-        # Si no existe, crear la nueva secuencia
-        PostSecuencia.crear_secuencia(secuencia_data)
-        return idSecuencia.LastID()
-    except HTTPException as e:
-        print("Error en process_secuencia_item:", e)
-    return None
-
-def process_concepto_item(item):
-    if item != 'FECHA':
+def process_concepto_item(item, conceptosDB):
+        for concepto in conceptosDB:
+            if concepto.nombre == item:
+                return item, concepto.id
         concepto_data = ConceptoCreateModel(nombre=item)
         try:
-            # Comprobar si el concepto ya existe
-            existing_conceptos = GetAllConceptos.listar_conceptos()
-            if any(concepto.nombre == concepto_data.nombre for concepto in existing_conceptos):
-                # Si ya existe, obtener el ID del concepto existente
-                existing_id = next(concepto.id for concepto in existing_conceptos if concepto.nombre == concepto_data.nombre)
-                return item, existing_id
-
-            # Si no existe, crear el nuevo concepto
             PostConcepto.crear_concepto(concepto_data)
-            return item, idConcepto.LastID()
+            id_concepto = idConcepto.LastID()
+            return item, id_concepto
         except HTTPException as e:
             print("Error en process_concepto_item:", e)
-    return item, None
+            return item, None
 
 def process_movimiento_item(id_concepto, id_secuencia, value, date):
-    movimiento_data = MovimientoCreateModel(id_concepto=id_concepto, id_secuencia=id_secuencia, valor=value, fecha=date)
+    movimiento_data = MovimientoCreateModel(id_concepto=id_concepto, id_secuencia=id_secuencia, valor=round(value, 5), fecha=date)
     try:
         PostMovimiento.crear_movimiento(movimiento_data)
         return "datos insertados con éxito"
@@ -75,191 +66,102 @@ def obtener_mes_y_anio(fecha_str):
     fecha = datetime.strptime(fecha_str, '%Y-%m-%d')
     return fecha.month, fecha.year
 
+def process_excel_data(excel_data):
+    
+    columnas_df_ROM1 = excel_data['DETALLE LBI'].iloc[41, 1:-1].values
+    columnas_df_ROM1[0] = 'secuencia'
+    columnas_df_ROM1[1] = 'conceptos'
+    columnas_filtradas_df_ROM1 = [col for col in columnas_df_ROM1 if isinstance(col, str) and "ANUAL" not in col and "TOTAL" not in col and col and col != "Movimientos Totales"]
+    indices_filtrados_df_ROM1 = [i for i, col in enumerate(columnas_df_ROM1) if col in columnas_filtradas_df_ROM1]
+    indices_ajustados_df_ROM1 = [i + 1 for i in indices_filtrados_df_ROM1] 
+    df_ROM1 = clean_dataframe(excel_data['DETALLE LBI'].iloc[47:52, indices_ajustados_df_ROM1])
+    df_ROM1.columns = columnas_filtradas_df_ROM1
+    df_ROM1['secuencia'] = df_ROM1['secuencia'].replace('ROM a Pila (Procesable)', 'ROM1').fillna(method='ffill')
+    
+    columnas_df_ROM2 = excel_data['DETALLE LBII'].iloc[69, 1:-1].values
+    columnas_df_ROM2[0] = 'secuencia'
+    columnas_df_ROM2[1] = 'conceptos'
+    columnas_filtradas_df_ROM2 = [col for col in columnas_df_ROM2 if isinstance(col, str) and "ANUAL" not in col and "TOTAL" not in col and col and col != "Movimientos Totales"]
+    indices_filtrados_df_ROM2 = [i for i, col in enumerate(columnas_df_ROM2) if col in columnas_filtradas_df_ROM2]
+    indices_ajustados_df_ROM2 = [i + 1 for i in indices_filtrados_df_ROM2]
+    df_ROM2 = clean_dataframe(excel_data['DETALLE LBII'].iloc[76:82, indices_ajustados_df_ROM2])
+    df_ROM2.columns = columnas_filtradas_df_ROM2
+    df_ROM2['secuencia'] = df_ROM2['secuencia'].replace('ROM a Pila (Procesable)', 'ROM2').fillna(method='ffill')
+    print(df_ROM2)
+    
+    columnas_df_HEAP = excel_data['DETALLE FINAL'].iloc[7, 1:-1].values
+    columnas_df_HEAP[0] = 'secuencia'
+    columnas_df_HEAP[1] = 'conceptos'
+    columnas_filtradas_df_HEAP = [col for col in columnas_df_HEAP if isinstance(col, str) and "ANUAL" not in col and "TOTAL" not in col and col and col != "Movimientos Totales" and col != "Movimientos Totales - Lomas Bayas"]
+    indices_filtrados_df_HEAP = [i for i, col in enumerate(columnas_df_HEAP) if col in columnas_filtradas_df_HEAP]
+    indices_ajustados_df_HEAP = [i + 1 for i in indices_filtrados_df_HEAP] 
+    df_HEAP = clean_dataframe(excel_data['DETALLE FINAL'].iloc[8:14, indices_ajustados_df_HEAP])
+    df_HEAP.columns = columnas_filtradas_df_HEAP
+    df_HEAP['secuencia'] = df_HEAP['secuencia'].replace('HEAP', 'HEAP').fillna(method='ffill')
+    
+    combined_df = pd.concat([df_ROM1, df_ROM2, df_HEAP]).reset_index(drop=True)
+    return combined_df
+    
+
 @router.post("/PostCargarBudget/")
-async def cargar_datos_desde_excel(fecha: str, file: UploadFile = File(...)):
+async def cargar_datos_desde_excel(file: UploadFile = File(...)):
     if not file.filename.endswith('.xlsx'):
         raise HTTPException(status_code=400, detail="El archivo no es un archivo .xlsx válido.")
 
     try:
         contents = await file.read()
         data = io.BytesIO(contents)
-        dfROM1 = pd.read_excel(data, sheet_name='DETALLE LBI', engine='openpyxl')
-        dfROM1 = clean_dataframe(dfROM1)
+        excel_data_budget = pd.read_excel(data, sheet_name=None, engine='openpyxl')
         
-        # Filtrar los datos específicos de "ROM1 a Pila (Procesable)"
-        rom_pila_procesableROM1 = dfROM1[dfROM1.iloc[:, 0] == 'ROM a Pila (Procesable)']
-        rom_pila_procesableROM1 = rom_pila_procesableROM1.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
-
-        # Seleccionar solo las filas necesarias
-        tonelajeROM1 = rom_pila_procesableROM1.iloc[0, 1:36].tolist()
-        cu_tROM1 = rom_pila_procesableROM1.iloc[1, 1:36].tolist()
-        cu_sROM1 = rom_pila_procesableROM1.iloc[2, 1:36].tolist()
-        rcu_dROM1 = rom_pila_procesableROM1.iloc[3, 1:36].tolist()
-        finoROM1 = rom_pila_procesableROM1.iloc[4, 1:36].tolist()
-        
-        print(tonelajeROM1)
-        print(cu_tROM1)
-        print(cu_sROM1)
-        print(rcu_dROM1)
-        print(finoROM1)
-
-        dfROM2 = pd.read_excel(data, sheet_name='DETALLE LBII', engine='openpyxl')
-        dfROM2 = clean_dataframe(dfROM2)
-
-         # Filtrar los datos específicos de "ROM1 a Pila (Procesable)"
-        rom_pila_procesableROM2 = dfROM2[dfROM2.iloc[:, 0] == 'ROM a Pila (Procesable)']
-        rom_pila_procesableROM2 = rom_pila_procesableROM2.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
-        
-        # Seleccionar solo las filas necesarias
-        tonelajeROM2 = rom_pila_procesableROM2.iloc[0, 1:36].tolist()
-        cu_tROM2 = rom_pila_procesableROM2.iloc[1, 1:36].tolist()
-        cu_sROM2 = rom_pila_procesableROM2.iloc[2, 1:36].tolist()
-        cu_wROM2 = rom_pila_procesableROM2.iloc[3, 1:36].tolist()
-        rcu_hROM2 = rom_pila_procesableROM2.iloc[4, 1:36].tolist()
-        finoROM2 = rom_pila_procesableROM2.iloc[5, 1:36].tolist()
-        
-        print(tonelajeROM2)
-        print(cu_tROM2)
-        print(cu_sROM2)
-        print(cu_wROM2)
-        print(rcu_hROM2)
-        print(finoROM2)
-
-
-        dfHEAP = pd.read_excel(data, sheet_name='DETALLE FINAL', engine='openpyxl')
-        dfHEAP = clean_dataframe(dfHEAP)
-
-        # Filtrar los datos específicos de HEAP"
-        Total_HEAP = dfHEAP[dfHEAP.iloc[:, 0] == 'HEAP']
-        Total_HEAP = Total_HEAP.dropna(how='all', axis=1)  # Eliminar columnas completamente vacías
-
-        # Seleccionar solo las filas necesarias
-        tonelajeHEAP = Total_HEAP.iloc[0, 1:36].tolist()
-        cu_tHEAP = Total_HEAP.iloc[1, 1:36].tolist()
-        cu_sHEAP = Total_HEAP.iloc[2, 1:36].tolist()
-        cu_hHEAP = Total_HEAP.iloc[3, 1:36].tolist()
-        wcu_HEAP = Total_HEAP.iloc[4, 1:36].tolist()
-        finoHEAP = Total_HEAP.iloc[5, 1:36].tolist()
-
-        print(tonelajeHEAP)
-        print(cu_tHEAP)
-        print(cu_sHEAP)
-        print(cu_hHEAP)
-        print(wcu_HEAP)
-        print(finoHEAP)
-
-
-        mes, anio = obtener_mes_y_anio(fecha)
-
-        secuenciaROM1 = extract_column_data(dfROM1, dfROM1.columns[0])
-        conceptosROM1 = extract_column_data(dfROM1, dfROM1.columns[1])
-
-        secuenciaROM2 = extract_column_data(dfROM2, dfROM2.columns[0])
-        conceptosROM2 = extract_column_data(dfROM2, dfROM2.columns[1])
-
-        secuenciaHEAP = extract_column_data(dfHEAP, dfHEAP.columns[0])
-        conceptosHEAP = extract_column_data(dfHEAP, dfHEAP.columns[1])
-
-        id_secuencias = {}
-        id_conceptos = {}
+        processed_data_budget = process_excel_data(excel_data_budget)
+        print("DataFrame procesado:")
+        print(processed_data_budget)
 
         
-        with ThreadPoolExecutor() as executor:
-            secuencias_futures_ROM1 = {executor.submit(process_secuencia_item, item): item for item in secuenciaROM1}
-            conceptos_futures_ROM1 = {executor.submit(process_concepto_item, item): item for item in conceptosROM1}
+        secuencia_budget = extract_column_data(processed_data_budget, 'secuencia')
+        conceptos_budget = extract_column_data(processed_data_budget, 'conceptos')
 
-            for future in as_completed(secuencias_futures_ROM1):
-                item = secuencias_futures_ROM1[future]
-                id_secuencias[item] = future.result()
-
-            for future in as_completed(conceptos_futures_ROM1):
-                item = conceptos_futures_ROM1[future]
-                result = future.result()
-                if result[1] is not None:
-                    id_conceptos[item] = result[1]
+        secuenciaDB_budget = GetAllSecuencias.listar_secuencia()
+        conceptosDB_budget = GetAllConceptos.listar_conceptos()
 
         with ThreadPoolExecutor() as executor:
-            secuencias_futures_ROM2 = {executor.submit(process_secuencia_item, item): item for item in secuenciaROM2}
-            conceptos_futures_ROM2 = {executor.submit(process_concepto_item, item): item for item in conceptosROM2}
-
-            for future in as_completed(secuencias_futures_ROM2):
-                item = secuencias_futures_ROM2[future]
-                id_secuencias[item] = future.result()
-
-            for future in as_completed(conceptos_futures_ROM2):
-                item = conceptos_futures_ROM2[future]
-                result = future.result()
-                if result[1] is not None:
-                    id_conceptos[item] = result[1]
+            future_to_item = {executor.submit(process_secuencia_item, item, secuenciaDB_budget): item for item in secuencia_budget}
+            for future in as_completed(future_to_item):
+                future.result()
 
         with ThreadPoolExecutor() as executor:
-            secuencias_futures_HEAP = {executor.submit(process_secuencia_item, item): item for item in secuenciaHEAP}
-            conceptos_futures_HEAP = {executor.submit(process_concepto_item, item): item for item in conceptosHEAP}
-
-            for future in as_completed(secuencias_futures_HEAP):
-                item = secuencias_futures_HEAP[future]
-                id_secuencias[item] = future.result()
-
-            for future in as_completed(conceptos_futures_HEAP):
-                item = conceptos_futures_HEAP[future]
-                result = future.result()
-                if result[1] is not None:
-                    id_conceptos[item] = result[1]
-
-        with ThreadPoolExecutor() as executor:
-            tasks = []
-            for idx, row in dfROM1.iterrows():
-                secuencia_excel = row.iloc[0]
-                if secuencia_excel in id_secuencias:
-                    id_secuencia = id_secuencias[secuencia_excel]
-                    concepto_excel = row.iloc[1]
-                    if concepto_excel in id_conceptos:
-                        id_concepto = id_conceptos[concepto_excel]
-                        row_data = row[2:33]
-                        numeric_data = pd.to_numeric(row_data, errors='coerce')
-                        for mes, value in zip(mes_del_anio(mes, anio), numeric_data):
-                            if pd.notna(value):
-                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, mes))
-
-            for future in as_completed(tasks):
-                future.result()  # Esto asegura que cualquier excepción en las tareas se levante
-
-        with ThreadPoolExecutor() as executor:
-            tasks = []
-            for idx, row in dfROM2.iterrows():
-                secuencia_excel = row.iloc[0]
-                if secuencia_excel in id_secuencias:
-                    id_secuencia = id_secuencias[secuencia_excel]
-                    concepto_excel = row.iloc[1]
-                    if concepto_excel in id_conceptos:
-                        id_concepto = id_conceptos[concepto_excel]
-                        row_data = row[2:33]
-                        numeric_data = pd.to_numeric(row_data, errors='coerce')
-                        for mes, value in zip(mes_del_anio(mes, anio), numeric_data):
-                            if pd.notna(value):
-                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, mes))
-
-            for future in as_completed(tasks):
-                future.result()  # Esto asegura que cualquier excepción en las tareas se levante
+            future_to_concepto = {executor.submit(process_concepto_item, item, conceptosDB_budget): item for item in conceptos_budget}
+            for future in as_completed(future_to_concepto):
+                future.result()
         
-        with ThreadPoolExecutor() as executor:
-            tasks = []
-            for idx, row in dfHEAP.iterrows():
-                secuencia_excel = row.iloc[0]
-                if secuencia_excel in id_secuencias:
-                    id_secuencia = id_secuencias[secuencia_excel]
-                    concepto_excel = row.iloc[1]
-                    if concepto_excel in id_conceptos:
-                        id_concepto = id_conceptos[concepto_excel]
-                        row_data = row[2:33]
-                        numeric_data = pd.to_numeric(row_data, errors='coerce')
-                        for mes, value in zip(mes_del_anio(mes, anio), numeric_data):
-                            if pd.notna(value):
-                                tasks.append(executor.submit(process_movimiento_item, id_concepto, id_secuencia, value, mes))
+        
+        anios = ['2024','2025']
+                #366 DIAS, 365 DIAS
+        trimestres = [['ENE','FEB','MAR'],['ABR','MAY','JUN'],['JUL','AGO','SEP'],['OCT','NOV','DIC']]
+                        # SUMA 90 DIAS       SUMA 91 DIAS        SUMA 92 DIAS         SUMA 92 DIAS
+        semestres = [['ENE','FEB','MAR','ABR','MAY','JUN'],['JUL','AGO','SEP','OCT','NOV','DIC']] 
+                             #SUMA 181 DIAS                          SUMA 184 DIAS
+        """
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for idx, row in processed_data_budget.iterrows():
+                for secuencia in secuenciaDB_budget:
+                    if secuencia.descripcion == row['secuencia']:
+                        id_secuencia = secuencia.id
+                        for concepto in conceptosDB_budget:
+                            if concepto.nombre == row['conceptos']:
+                                id_concepto = concepto.id
+                                for i, anio in enumerate(anios):
+                                    value = row[anio]
+                                    if pd.notna(value):
+                                        dia = dias_del_mes(i + 1, anio)
+                                        for date in dia:
+                                            executor.submit(process_movimiento_item, id_concepto, id_secuencia, round(value / len(dia), 4), date)
 
-            for future in as_completed(tasks):
-                future.result()  # Esto asegura que cualquier excepción en las tareas se levante
-    
+        return {"status": "success", "year": anio, "data": processed_data_budget.to_dict(orient="records")}
+    """
+    except ValueError as ve:
+        print("Excepción de valor:", str(ve))
+        raise HTTPException(status_code=400, detail=f"Error en los datos del archivo Excel: {str(ve)}")
     except Exception as e:
         print("Excepción:", str(e))
         raise HTTPException(status_code=500, detail=f"Error al procesar el archivo Excel: {str(e)}")
