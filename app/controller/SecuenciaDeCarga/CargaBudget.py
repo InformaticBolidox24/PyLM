@@ -22,6 +22,7 @@ def clean_dataframe(df):
         df[col] = df[col].fillna(method='ffill')
     df = df.dropna(axis=1, how='all')
     df = df.loc[:, ~(df.columns.str.contains('Unnamed') & df.isna().all())]
+    print(df)
     return df
 
 
